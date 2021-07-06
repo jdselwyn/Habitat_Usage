@@ -7,6 +7,7 @@ Scripts in the `utils` folder are for post run analysis and figure creation for 
 
 The order of scripts run is:
 1. `SLURM_scripts/classify_habitat.slurm`
+  -Use `utils/assess_classification.R` to determine best classification model
 2. `classification_selection.sh`
 3. `topography.sh`
 4. `multi_inla.sh`
