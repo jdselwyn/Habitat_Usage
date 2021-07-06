@@ -21,3 +21,6 @@ The order of scripts run is:
     - Merges posterior distributions across inlabru models and outputs results needed for manuscript.
 6. `shoal_composition.R`
     - Analyze shoal composition of genetically sequenced shoals based on shoal size and topography.
+    - Use `utils/species_breakdown.R` to calculate individual shoal composition independent of topography.
+7. Use `utils/parameter_plot.R` to plot parameter estimates of both the distribution and composition models.
+    - Additionally calculates a variety of metrics useful for publication (e.g., posterior probability of positive slope)
