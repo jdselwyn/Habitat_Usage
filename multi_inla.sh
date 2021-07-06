@@ -2,6 +2,8 @@
 
 ##Run many inla models sbatch array
 
+#bash Habitat/mutli_inla.sh /home/jselwyn/Habitat/params/inlabru_params.R 17.5.21 1162 1150
+
 param_file=$1
 echo $param_file
 

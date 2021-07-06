@@ -30,11 +30,15 @@ model_fitting <- list.dirs(RESULTS_DIR, full.names = TRUE) %>%
          str_detect(model_folders, 'Overall', negate = TRUE)) %>%
   mutate(inner_files = future_map(model_folders, ~list.files(.x, pattern = 'rds$', recursive = FALSE, full.names = FALSE)),
          model_finished = map_lgl(inner_files, ~length(.x) > 0)) %>%
-  select(-inner_files)
+  select(-inner_files) %>%
+  mutate(model_number = str_extract(model_folders, '[0-9]+$') %>% as.integer)
+
 
 model_fitting %>%
   filter(!model_finished)
 
+max(model_fitting$model_number)
+sum(model_fitting$model_finished)
 
 
 #### Number of Fish Diagnostic ####
