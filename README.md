@@ -17,10 +17,10 @@ The order of scripts run is:
     - Use `utils/site_stats.R` to summarize topographic and habitat classification stats for each site.
 4. `multi_inla.sh`
     - Fits multiple [inlabru](https://sites.google.com/inlabru.org/inlabru) models using randomized locations of individual fish around shoal centroid.
-5. `post_process_inlabru.R` **will write wrapper SLURM**
-    - Merges posterior distributions across inlabru models and outputs results needed for manuscript.
-6. `shoal_composition.R`
+        - occassionally model will fail in ways I haven't been able to diagnose/replicate. As such may need to be run a second/third time to get the total number of model fits desired
+    - After fitting all models post-processing of models will be run to output joint parameter estimates and diagnostics across all models
+5. `shoal_composition.R`
     - Analyze shoal composition of genetically sequenced shoals based on shoal size and topography.
     - Use `utils/species_breakdown.R` to calculate individual shoal composition independent of topography.
-7. Use `utils/parameter_plot.R` to plot parameter estimates of both the distribution and composition models.
+6. Use `utils/parameter_plot.R` to plot parameter estimates of both the distribution and composition models.
     - Additionally calculates a variety of metrics useful for publication (e.g., posterior probability of positive slope)

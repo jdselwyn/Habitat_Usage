@@ -7,7 +7,7 @@ read_csv()
 
 #### Parameters ####
 ## Distribution Model 
-posterior_hpd_distribution <- read_rds('~/Coryphopterus/Habitat Association (Paper Y - PhD Ch. Y)/Results/INLA_models/models_Overall.17.5.21/overall_parameters.rds') %>%
+posterior_hpd_distribution <- read_rds('../../overall_parameters.rds') %>%
   select(-sd:-quant0.975, -distributions) %>%
   rowwise %>%
   mutate(hpd = list(pivot_wider(hpd, 

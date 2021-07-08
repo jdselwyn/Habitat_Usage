@@ -1,7 +1,7 @@
 #### Parameters file sourced into inlabru model ####
 
 model_choice <- 'c5' #Choose habitat classification model to use (currently fixed at c5)
-integration_strategy <- 'auto' #eb or auto (fast or slow)
+integration_strategy <- 'auto' #'auto' #eb or auto (fast or slow)
 number_samples <- 1000 #Number of times to sample posterior of posterior distributions 
 pp_samples <- 100 #Number of posterior point processes to sample
 number_workers <- 6 #number of parallel jobs at some steps - increase to go faster but risk running out of memory

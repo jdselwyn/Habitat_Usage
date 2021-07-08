@@ -3,9 +3,9 @@
 ##TODO include mesh settings in sourced parameter file
 ##TODO make it so if there's already a param file it takes that one (right now can just specify the one that's already there)
 
-if(Sys.info()['sysname'] == 'Windows'){
+if(interactive()){
   param_file <- '/home/jselwyn/Habitat/params/inlabru_params.R'
-  run_name <- '14.3.21.A'
+  run_name <- '7.7.21_test.8'
 } else {
   args <- commandArgs(trailingOnly=TRUE)
   param_file <- args[1]
@@ -345,41 +345,6 @@ bind_rows(
 
 message(str_c('Finished Parameter Extraction: ', Sys.time()))
 
-
-#### Fit Null Model ####
-message(str_c('Start Fitting Null Model: ', Sys.time()))
-null_fit <- lgcp(coordinates ~ Intercept(1, mean.linear = 0, prec.linear = 0.001), 
-                  fish, 
-                  samplers = site_poly,
-                  E = 1,
-                  domain = list(coordinates = mesh),
-                  options = list(verbose = TRUE, 
-                                 quantiles = c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975),
-                                 control.compute = list(config = TRUE, 
-                                                        dic = TRUE, 
-                                                        waic = TRUE,
-                                                        cpo = TRUE),
-                                 control.inla = list(strategy = "simplified.laplace",
-                                                     int.strategy = integration_strategy)))
-
-spatial_fit <- lgcp(coordinates ~ Intercept(1, mean.linear = 0, prec.linear = 0.001) + spatialSmooth(main = coordinates, model = matern), 
-                    fish, 
-                    samplers = site_poly,
-                    E = 1,
-                    domain = list(coordinates = mesh),
-                    options = list(verbose = TRUE, 
-                                   quantiles = c(0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975),
-                                   control.compute = list(config = TRUE, 
-                                                          dic = TRUE, 
-                                                          waic = TRUE,
-                                                          cpo = TRUE),
-                                   control.inla = list(strategy = "simplified.laplace",
-                                                       int.strategy = integration_strategy)))
-
-
-
-message(str_c('Finished Fitting Null Model: ', Sys.time()))
-
 #### Posterior Predictive Check - site & overall # of fish ####
 message(str_c('Start Posterior Predictive Counts: ', Sys.time()))
 waic_dic <- tibble(cpo = -1 * sum(log(model_fit$cpo$cpo)),
@@ -391,15 +356,16 @@ waic_dic <- tibble(cpo = -1 * sum(log(model_fit$cpo$cpo)),
               model_dic_p.eff = model_fit$dic$p.eff,
               model_deviance = model_fit$dic$mean.deviance,
               
-              null_dic = null_fit$dic$dic,
-              null_deviance = null_fit$dic$mean.deviance,
-              null_dic_p.eff = null_fit$dic$p.eff,
-              
-              spatial_dic = spatial_fit$dic$dic,
-              spatial_deviance = spatial_fit$dic$mean.deviance,
-              spatial_dic_p.eff = spatial_fit$dic$p.eff) %>%
+              # null_dic = null_fit$dic$dic,
+              # null_deviance = null_fit$dic$mean.deviance,
+              # null_dic_p.eff = null_fit$dic$p.eff,
+              # 
+              # spatial_dic = spatial_fit$dic$dic,
+              # spatial_deviance = spatial_fit$dic$mean.deviance,
+              # spatial_dic_p.eff = spatial_fit$dic$p.eff
+              ) %>%
   
-  mutate(pseudoR2 = 1 - model_deviance / null_deviance) %>%
+  # mutate(pseudoR2 = 1 - model_deviance / null_deviance) %>%
   
   pivot_longer(cols = everything()) %T>%
   write_csv(str_c(SAVE_LOCATION, '/INLA_models/models_',
@@ -418,20 +384,18 @@ site_preds <- site_poly %>%
   rowwise %>%
   mutate(poly = list(as_Spatial(geometry))) %>%
   ungroup %>%
-  mutate(spots = future_map(poly, ~ipoints(.x, mesh)),
-         preds = future_map(spots, ~predict(model_fit, .x, pred_form, 
-                                            n.samples = number_samples),
-                            .options = furrr_options(seed = TRUE))) %>%
-  select(Site, preds) %>%
-  rowwise %>%
-  summarise(Site = Site, as_tibble(preds),
-            .groups = 'drop') %>%
   left_join(fish_sf %>%
               as_tibble() %>%
               count(site) %>%
               rename(obs = n),
             by = c('Site' = 'site')) %>%
-  select(Site, obs, everything()) %T>%
+  mutate(spots = future_map(poly, ~ipoints(.x, mesh))) %>%
+  mutate(predicted_number = future_map(spots, ~generate(model_fit, .x, pred_form, 
+                                             n.samples = number_samples) %>%
+                              as.numeric,
+                            .options = furrr_options(seed = TRUE))) %>%
+  select(Site, obs, predicted_number) %>%
+  unnest(predicted_number) %T>%
   write_csv(str_c(SAVE_LOCATION, '/INLA_models/models_',
                   run_name, '/fishCountPostPred_', 
                   run_name, '.csv',
@@ -445,12 +409,24 @@ set_crs_terra <- function(x, crs_proj){
   x
 }
 
+predictions_to_coords <- function(preds, coords){
+  coords <- as(coords, 'SpatialPixelsDataFrame')
+  coords@data <- as.data.frame(preds)
+  coords
+}
+
+crop_pixels <- function(pix, pol){
+  as(crop(as(pix, 'SpatialPoints'), pol), 'SpatialPixels')
+}
+
+
+
 dem_info <- list.files(path = str_c(DATA_folder,'COPE_Sites/DEM',sep='/'), pattern = 'tif$',
                             full.names = TRUE) %>%
   tibble(dem = .) %>%
   mutate(Site = str_extract(dem, 'bz17-[0-9KNSAB]+') %>% str_to_upper) %>%
   mutate(dem = map(dem, ~raster(.x)),
-         dem = future_map(dem, ~projectRaster(.x, crs = newproj))) %>%
+         dem = future_map(dem, ~projectRaster(.x, crs = newproj), .options = furrr_options(seed = TRUE))) %>%
   mutate(dem = map(dem, rast),
          dem = map(dem, ~trim(.x))) %>%
   rowwise %>%
@@ -468,88 +444,55 @@ dem_info <- list.files(path = str_c(DATA_folder,'COPE_Sites/DEM',sep='/'), patte
   select(-geometry) %>%
   ungroup
 
-
-spatial_predictions <- dem_info %>%
-  mutate(preds_pixels = future_pmap(list(poly, rows, columns),
-                                 ~pixels(mesh, mask = ..1, 
-                                         nx = ..3, ny = ..2))) %>%
-  mutate(model_pred = future_map(preds_pixels, ~predict(model_fit,
-                                                        .x,
-                                                        spat_pred_form,
-                                                        n.samples = number_samples),
-                                 .options = furrr_options(seed = TRUE))) %>%
-  mutate(preds_stack = future_map(model_pred, stack),
-         preds_stack = future_map2(model_pred, preds_stack, ~set_names(.y, names(.x))),
-         preds_stack = future_map2(preds_stack, movement, ~raster::shift(.x, dx = .y[1], dy = .y[2]))) %>%
-  select(Site, preds_stack) %>%
-  rowwise %>%
-  mutate(preds_stack = list(rast(preds_stack)),
-         preds_stack = list(trim(preds_stack)),
-         preds_stack = list(set_crs_terra(preds_stack, newproj))) %>%
-  ungroup %>%
-  rename(unsmoothed = preds_stack) %>%
-  
-  
-  mutate(circle_mat = future_map(unsmoothed, 
-                                 ~raster::focalWeight(raster(.x$mean), sqrt(1/pi), 'circle'))) %>%
-  rowwise %>%
-  mutate(smoothed = list(map(names(unsmoothed), ~terra::focal(unsmoothed[[.x]], w = circle_mat, fun = 'sum') %>%
-                               cover(y = unsmoothed[[.x]])) %>%
-                           rast
-                         )) %>%
-  ungroup %>%
-  select(-circle_mat) %>%
-  pivot_longer(cols = c(unsmoothed, smoothed)) %>%
-  mutate(out_name = str_c(SAVE_LOCATION, '/INLA_models/models_',
-                          run_name, '/', Site, '_', name, '_', 
-                          run_name, '.tif',
-                          sep = '')) %>%
-  mutate(write = future_map2(value, out_name, ~writeRaster(.x, .y, overwrite = TRUE))) %>%
-  select(-write)
-message(str_c('Finished Prediction onto Sites: ', Sys.time()))
-
-#### Predict onto sites without the spatial smooth ####
-message(str_c('Start Prediction onto Sites  no smooth: ', Sys.time()))
+#block overloads memory with 1k samples - 11:43 - 3:33
+plan('sequential')
+plan('multicore', workers = 3)
 
 spatial_predictions <- dem_info %>%
   mutate(preds_pixels = future_pmap(list(poly, rows, columns),
                                     ~pixels(mesh, mask = ..1, 
-                                            nx = ..3, ny = ..2))) %>%
-  mutate(model_pred = future_map(preds_pixels, ~predict(model_fit,
-                                                        .x,
-                                                        spat_pred_form_noSmooth,
-                                                        n.samples = number_samples),
-                                 .options = furrr_options(seed = TRUE))) %>%
-  mutate(preds_stack = future_map(model_pred, stack),
-         preds_stack = future_map2(model_pred, preds_stack, ~set_names(.y, names(.x))),
-         preds_stack = future_map2(preds_stack, movement, ~raster::shift(.x, dx = .y[1], dy = .y[2]))) %>%
-  select(Site, preds_stack) %>%
-  rowwise %>%
-  mutate(preds_stack = list(rast(preds_stack)),
-         preds_stack = list(trim(preds_stack)),
-         preds_stack = list(set_crs_terra(preds_stack, newproj))) %>%
-  ungroup %>%
-  rename(unsmoothed = preds_stack) %>%
-  
-  
-  mutate(circle_mat = future_map(unsmoothed, 
-                                 ~raster::focalWeight(raster(.x$mean), sqrt(1/pi), 'circle'))) %>%
-  rowwise %>%
-  mutate(smoothed = list(map(names(unsmoothed), ~terra::focal(unsmoothed[[.x]], w = circle_mat, fun = 'sum') %>%
-                               cover(y = unsmoothed[[.x]])) %>%
-                           rast
+                                            nx = ..3, ny = ..2) %>%
+                                      crop_pixels(pol = ..1)
   )) %>%
-  ungroup %>%
-  select(-circle_mat) %>%
-  pivot_longer(cols = c(unsmoothed, smoothed)) %>%
+  # mutate(model_pred = future_map(preds_pixels, ~predict(model_fit, #THIS NEEDS TO CHANGE TO GENERATE
+  #                                                       .x,
+  #                                                       spat_pred_form,
+  #                                                       n.samples = number_samples),
+  #                                .options = furrr_options(seed = TRUE))) %>%
+  
+  mutate(model_pred = future_map2(preds_pixels, movement, ~generate(model_fit,
+                                                                    .x,
+                                                                    spat_pred_form,
+                                                                    n.samples = number_samples) %>%
+                                    predictions_to_coords(coords = .x) %>%
+                                    stack %>%
+                                    set_names(str_c('V', 1:number_samples, sep = '')) %>%
+                                    raster::shift(., dx = .y[1], dy = .y[2]) %>%
+                                    trim,
+                                  .options = furrr_options(seed = TRUE)
+                                  )) %>%
+  mutate(model_pred = map(model_pred, ~rast(.x) %>%
+                            set_crs_terra(., newproj)))%>%
+  
+  select(Site, model_pred) %>%
+  # mutate(circle_mat = future_map(unsmoothed, 
+  #                                ~raster::focalWeight(raster(.x$V1), sqrt(1/pi), 'circle'),
+  #                                .options = furrr_options(seed = TRUE))) %>%
+  # rowwise %>%
+  # mutate(smoothed = list(map(names(unsmoothed), ~terra::focal(unsmoothed[[.x]], w = circle_mat, fun = 'sum') %>%
+  #                              cover(y = unsmoothed[[.x]])) %>%
+  #                          rast
+  #                        )) %>%
+  # ungroup %>%
+  # select(-circle_mat) %>%
+  # pivot_longer(cols = c(unsmoothed)) %>% #smoothed
   mutate(out_name = str_c(SAVE_LOCATION, '/INLA_models/models_',
-                          run_name, '/', Site, '_', name, '_', 
-                          run_name, 'noSpatial.tif',
+                          run_name, '/', Site, '_unsmoothed_', 
+                          run_name, '.tif',
                           sep = '')) %>%
-  mutate(write = future_map2(value, out_name, ~writeRaster(.x, .y, overwrite = TRUE))) %>%
+  mutate(write = future_map2(model_pred, out_name, ~writeRaster(.x, .y, overwrite = TRUE))) %>%
   select(-write)
-message(str_c('Finished Prediction onto Sites no smooth: ', Sys.time()))
-
+message(str_c('Finished Prediction onto Sites: ', Sys.time()))
 
 #### Posterior Samples ####
 message(str_c('Start sampling posterior point processes: ', Sys.time()))
@@ -689,6 +632,24 @@ sample.lgcp_jds <- function(mesh, predictions, samplers){
   ret
 }
 
+site_sf <- site_poly %>%
+  st_as_sf %>%
+  select(-weight) %>%
+  rename(Site = names) %>%
+  left_join(translation_instructions, by = 'Site') %>%
+  rowwise %>%
+  mutate(geometry = geometry + movement) %>%
+  ungroup %>%
+  select(-movement) %>%
+  st_sf(crs = newproj) %T>%
+  st_write(str_c(SAVE_LOCATION, '/INLA_models/models_',
+                 run_name, '/siteOutline_', run_name, '.shp',
+                 sep = ''),
+           quiet = TRUE,
+           delete_dsn = file.exists(str_c(SAVE_LOCATION, '/INLA_models/models_',
+                                          run_name, '/siteOutline_', run_name, '.shp',
+                                          sep = '')))
+
 mesh_prediction <- predict(model_fit,
                            vertices(mesh),
                            spat_pred_form,
@@ -732,112 +693,96 @@ posterior_sample <- tibble(sim = 1:pp_samples) %>%
 
 message(str_c('Finished sampling posterior point processes: ', Sys.time()))
 
-#### Posterior Predictive - secondary measures ####
-message(str_c('Start measuring site level posterior point processes: ', Sys.time()))
-site_sf <- site_poly %>%
-  st_as_sf %>%
-  select(-weight) %>%
-  rename(Site = names) %>%
-  left_join(translation_instructions, by = 'Site') %>%
-  rowwise %>%
-  mutate(geometry = geometry + movement) %>%
-  ungroup %>%
-  select(-movement) %>%
-  st_sf(crs = newproj) %T>%
-  st_write(str_c(SAVE_LOCATION, '/INLA_models/models_',
-                 run_name, '/siteOutline_', run_name, '.shp',
-                 sep = ''),
-           quiet = TRUE,
-           delete_dsn = file.exists(str_c(SAVE_LOCATION, '/INLA_models/models_',
-                                          run_name, '/siteOutline_', run_name, '.shp',
-                                          sep = '')))
 
-
-site_point_processes <- full_join(
-  fish_sf %>%
-    nest(obs = geometry),
-  
-  posterior_sample %>%
-    nest(sim = geometry),
-  
-  by = c('site' = 'Site')  
-) %>%
-  nest(simulations = c(sample, sim)) %>%
-  full_join(site_sf, by = c('site' = 'Site')) %>%
-  rename(Site = site) %>%
-  
-  mutate(nsim = map_int(simulations, nrow),
-         obs = map(obs, ~as(.x, 'Spatial')),
-         site = map(geometry, ~as(.x, 'Spatial')),
-         simulations = map(simulations, ~pull(.x, sim))) %>%
-  select(-geometry) %>%
-  rowwise %>%
-  mutate(simulations = list(map(simulations, ~as(.x, 'Spatial')))) %>%
-  
-  mutate(site = list(as(site, 'owin')),
-         obs = list(ppp(x = coordinates(obs)[,1],
-                        y = coordinates(obs)[,2],
-                        window = site)),
-         simulations = list(map(simulations, ~ppp(x = coordinates(.x)[,1],
-                                                  y = coordinates(.x)[,2],
-                                                  window = site))
-         )) %>%
-  
-  ungroup %>%
-  full_join(expand_grid(Site = .$Site, 
-                        metric = c('Kest','Lest', 'pcf', 'Fest', 'Gest', 'Jest')),
-            by = 'Site') %>%
-  select(Site, metric, everything()) %>%
-  mutate(model = future_pmap(list(obs, simulations, nsim, metric), 
-                             ~envelope(..1, ..4, simulate = ..2, nsim = (..3 - 1)),
-                             .progress = TRUE, .options = furrr_options(seed = TRUE))) %>%
-  pivot_wider(names_from = 'metric', 
-              values_from = 'model') %>%
-  select(-obs, -simulations, -site) %T>%
-  write_rds(str_c(SAVE_LOCATION, '/INLA_models/models_',
-                  run_name, '/pointProcessSiteEnvelopes_', run_name, '.rds',
-                  sep = ''), 
-            compress = 'xz')
-message(str_c('Finished measuring site level posterior point processes: ', Sys.time()))  
-
-## All Sites together 
-
-message(str_c('Start measuring overall posterior point processes: ', Sys.time()))
-
-site_win <- site_sf %>%
-  select(geometry) %>%
-  summarise() %>%
-  as_Spatial() %>%
-  as('owin')
-
-observed_ppp <- fish_sf %>%
-  select(geometry) %>%
-  summarise() %>%
-  as_Spatial() %>%
-  coordinates() %>%
-  ppp(x = .[,1],
-      y = .[,2],
-      window = site_win)
-
-
-posterior_sample_ppp <- posterior_sample %>%
-  select(sample, geometry) %>%
-  group_by(sample) %>%
-  group_split() %>%
-  future_map(~as_Spatial(.) %>% coordinates(), .options = furrr_options(seed = TRUE)) %>%
-  future_map(~ppp(x = .x[,1],
-                  y = .x[,2],
-                  window = site_win),
-             .options = furrr_options(seed = TRUE))
- 
-
-overall_point_processes <- tibble(metric = c('Kest','Lest', 'pcf', 'Fest', 'Gest', 'Jest')) %>%
-  mutate(envelope = future_map(metric, ~envelope(observed_ppp, .x, 
-                                                 simulate = posterior_sample_ppp, 
-                                                 nsim = length(posterior_sample_ppp) - 1))) %T>%
-  write_rds(str_c(SAVE_LOCATION, '/INLA_models/models_',
-                  run_name, '/pointProcessEnvelopes_', run_name, '.rds',
-                  sep = ''), 
-            compress = 'xz')
-
-message(str_c('Finished measuring overall posterior point processes: ', Sys.time()))
+# Below transfer to post-processing script to analyze all together
+# #### Posterior Predictive - secondary measures ####
+# message(str_c('Start measuring site level posterior point processes: ', Sys.time()))
+# 
+# site_point_processes <- full_join(
+#   fish_sf %>%
+#     nest(obs = geometry),
+#   
+#   posterior_sample %>%
+#     nest(sim = geometry),
+#   
+#   by = c('site' = 'Site')  
+# ) %>%
+#   nest(simulations = c(sample, sim)) %>%
+#   full_join(site_sf, by = c('site' = 'Site')) %>%
+#   rename(Site = site) %>%
+#   
+#   mutate(nsim = map_int(simulations, nrow),
+#          obs = map(obs, ~as(.x, 'Spatial')),
+#          site = map(geometry, ~as(.x, 'Spatial')),
+#          simulations = map(simulations, ~pull(.x, sim))) %>%
+#   select(-geometry) %>%
+#   rowwise %>%
+#   mutate(simulations = list(map(simulations, ~as(.x, 'Spatial')))) %>%
+#   
+#   mutate(site = list(as(site, 'owin')),
+#          obs = list(ppp(x = coordinates(obs)[,1],
+#                         y = coordinates(obs)[,2],
+#                         window = site)),
+#          simulations = list(map(simulations, ~ppp(x = coordinates(.x)[,1],
+#                                                   y = coordinates(.x)[,2],
+#                                                   window = site))
+#          )) %>%
+#   
+#   ungroup %>%
+#   full_join(expand_grid(Site = .$Site, 
+#                         metric = c('Kest','Lest', 'pcf', 'Fest', 'Gest', 'Jest')),
+#             by = 'Site') %>%
+#   select(Site, metric, everything()) %>%
+#   mutate(model = future_pmap(list(obs, simulations, nsim, metric), 
+#                              ~envelope(..1, ..4, simulate = ..2, nsim = (..3 - 1)),
+#                              .progress = TRUE, .options = furrr_options(seed = TRUE))) %>%
+#   pivot_wider(names_from = 'metric', 
+#               values_from = 'model') %>%
+#   select(-obs, -simulations, -site) %T>%
+#   write_rds(str_c(SAVE_LOCATION, '/INLA_models/models_',
+#                   run_name, '/pointProcessSiteEnvelopes_', run_name, '.rds',
+#                   sep = ''), 
+#             compress = 'xz')
+# message(str_c('Finished measuring site level posterior point processes: ', Sys.time()))  
+# 
+# ## All Sites together 
+# 
+# message(str_c('Start measuring overall posterior point processes: ', Sys.time()))
+# 
+# site_win <- site_sf %>%
+#   select(geometry) %>%
+#   summarise() %>%
+#   as_Spatial() %>%
+#   as('owin')
+# 
+# observed_ppp <- fish_sf %>%
+#   select(geometry) %>%
+#   summarise() %>%
+#   as_Spatial() %>%
+#   coordinates() %>%
+#   ppp(x = .[,1],
+#       y = .[,2],
+#       window = site_win)
+# 
+# 
+# posterior_sample_ppp <- posterior_sample %>%
+#   select(sample, geometry) %>%
+#   group_by(sample) %>%
+#   group_split() %>%
+#   future_map(~as_Spatial(.) %>% coordinates(), .options = furrr_options(seed = TRUE)) %>%
+#   future_map(~ppp(x = .x[,1],
+#                   y = .x[,2],
+#                   window = site_win),
+#              .options = furrr_options(seed = TRUE))
+#  
+# 
+# overall_point_processes <- tibble(metric = c('Kest','Lest', 'pcf', 'Fest', 'Gest', 'Jest')) %>%
+#   mutate(envelope = future_map(metric, ~envelope(observed_ppp, .x, 
+#                                                  simulate = posterior_sample_ppp, 
+#                                                  nsim = length(posterior_sample_ppp) - 1))) %T>%
+#   write_rds(str_c(SAVE_LOCATION, '/INLA_models/models_',
+#                   run_name, '/pointProcessEnvelopes_', run_name, '.rds',
+#                   sep = ''), 
+#             compress = 'xz')
+# 
+# message(str_c('Finished measuring overall posterior point processes: ', Sys.time()))

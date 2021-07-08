@@ -1,10 +1,9 @@
 #!/bin/bash
 
 #SBATCH --job-name=inla
-#SBATCH -p normal,cbirdq
+#SBATCH -p normal,cbirdq,gpu
 #SBATCH --nodes=1
-#SBATCH -t 4-00:00:00
-#SBATCH --output=/work/hobi/jselwyn/Habitat/SLURM_Out/run_inla_%j.out
+#SBATCH -t 1-00:00:00
 
 #### Full Fitting inlabru model from param file ####
 
