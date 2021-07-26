@@ -60,6 +60,10 @@ model_folders <- model_fitting %>%
   # sample_n(25) %>% #for testing
   identity()
 
+if(sum(model_fitting$model_finished) > 1000){
+  model_folders <- slice(model_folders, 1:1000)
+}
+
 #### Number of Fish Diagnostic ####
 message('Starting fish diagnostics: ', Sys.time())
 site_areas <- model_folders %>%
@@ -389,7 +393,10 @@ message(str_c('Finished measuring site level posterior point processes: ', Sys.t
 
 
 #Plot ppp results 
+
 ppp_results <- ppp_metrics %>%
+  left_join(site_rename, by = 'Site') %>%
+  arrange(site) %>%
   pivot_longer(cols = Kest:Jest,
                names_to = 'metric',
                values_to = 'envelope') %>%
@@ -399,7 +406,7 @@ ppp_results <- ppp_metrics %>%
          p.value = numerator / denominator) %>%
   select(-extras) %>%
   
-  mutate(ind_plot = pmap(list(envelope, Site, numerator, denominator, p.value),
+  mutate(ind_plot = pmap(list(envelope, site, numerator, denominator, p.value),
                        ~..1 %>%
                          ggplot(aes(x = r, y = obs, ymin = lo, ymax = hi)) +
                          geom_ribbon(alpha = 0.4) +

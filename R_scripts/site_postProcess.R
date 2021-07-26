@@ -55,6 +55,10 @@ model_folders <- model_fitting %>%
   # sample_n(25) %>% #for testing
   identity()
 
+if(sum(model_fitting$model_finished) > 1000){
+  model_folders <- slice(model_folders, 1:1000)
+}
+
 #### Merge Prediction Rasters ####
 message('Start reading files: ', Sys.time())
 prediction_out <- model_folders %>%
