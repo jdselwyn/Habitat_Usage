@@ -2,7 +2,7 @@
 
 
 if(interactive()){
-  model_prefix <- '8.7.21.test'
+  model_prefix <- '9.7.21'
 } else {
   args <- commandArgs(trailingOnly=TRUE)
   model_prefix <- args[1]
@@ -287,67 +287,82 @@ message('Finish parameter estimates: ', Sys.time())
 #### PPP Diagnostic ####
 message('Starting Secondary PPP diagnostics: ', Sys.time())
 
+subsampling_design <- sample(nrow(model_folders) * 100, 100) %>%
+  tibble(posterior_sample = .) %>%
+  mutate(version = as.integer((posterior_sample - 1) %/% 100 + 1),
+         posterior_sample = as.integer((posterior_sample - 1) %% 100 + 1))
+
+obs_version <- sample(subsampling_design$version, 1)
+
 site_outlines <- model_folders %>%
+  arrange(version) %>%
+  mutate(version = 1:n()) %>%
+  inner_join(select(subsampling_design, version), by = 'version') %>%
+  filter(version == obs_version) %>%
   mutate(file = map_chr(model_folders, ~list.files(.x, pattern = 'siteOutline.*shp$', 
                                                    recursive = FALSE, full.names = TRUE) %>%
                           str_subset(model_prefix) %>%
                           str_subset('Overall', negate = TRUE))) %>%
   mutate(sites = future_map(file, st_read, quiet = TRUE, .options = furrr_options(seed = TRUE))) %>%
   unnest(sites) %>%
-  select(-model_folders, -file)
+  select(-model_folders, -file) %>%
+  rename(obs_version = version)
+
 
 observed_fish <- model_folders %>%
+  arrange(version) %>%
+  mutate(version = 1:n()) %>%
+  inner_join(select(subsampling_design, version), by = 'version') %>%
+  filter(version == obs_version) %>%
   mutate(file = map_chr(model_folders, ~list.files(.x, pattern = 'observed.*shp$', 
                                                    recursive = FALSE, full.names = TRUE) %>%
                           str_subset(model_prefix) %>%
                           str_subset('Overall', negate = TRUE))) %>%
   mutate(observed = future_map(file, st_read, quiet = TRUE, .options = furrr_options(seed = TRUE))) %>%
   unnest(observed) %>%
-  select(-model_folders, -file)
+  select(-model_folders, -file) %>%
+  rename(obs_version = version)
+
 
 posterior_samples <- model_folders %>%
+  arrange(version) %>%
+  mutate(version = 1:n()) %>%
+  inner_join(subsampling_design, by = 'version') %>%
   mutate(file = map_chr(model_folders, ~list.files(.x, pattern = 'pointProcessSample.*shp$', 
                                                    recursive = FALSE, full.names = TRUE) %>%
                           str_subset(model_prefix) %>%
                           str_subset('Overall', negate = TRUE))) %>%
   mutate(sim = future_map(file, st_read, quiet = TRUE, .options = furrr_options(seed = TRUE))) %>%
+  mutate(sim = map2(sim, posterior_sample, ~filter(.x, sample == .y))) %>%
+  select(-model_folders, -file, -posterior_sample) %>%
+  mutate(sim = future_map(sim, ~nest(.x, sim = geometry), .options = furrr_options(seed = TRUE))) %>%
   unnest(sim) %>%
-  select(-model_folders, -file)
+  nest(simulations = c(version, sample, sim))
 
+message('Finished reading in PPP diagnostic files: ', Sys.time())
 
 ## Calculate point process diagnostics
 diag_metrics <- c('Kest','Lest', 'pcf', 'Fest', 'Gest', 'Jest')
 
 site_point_processes <- observed_fish %>%
   nest(obs = geometry) %>%
-  filter(version == sample(0:max(version), 1)) %>% #randomly pick one to be "observed"
-  # filter(version == 0) %>% #for test
-  left_join(site_outlines, by = c('version', 'site' = 'Site')) %>%
-  rename(obs_version = version) %>%
+  left_join(site_outlines, by = c('obs_version', 'site' = 'Site')) %>%
   
-  left_join(posterior_samples %>%
-              nest(sim = geometry) %>%
-              # filter(version == 0) %>% #for test
-              nest(simulations = c(version, sample, sim)), 
+  left_join(posterior_samples, 
             by = c('site' = 'Site')) %>%
   rename(Site = site) %>%
   
-  mutate(nversions = future_map_int(simulations, ~n_distinct(.x$version), 
-                                    .options = furrr_options(seed = TRUE)),
-         nsim = future_map_int(simulations, ~n_distinct(.x$sample), 
-                               .options = furrr_options(seed = TRUE)),
-         obs = future_map(obs, ~st_as_sf(.x) %>% as('Spatial'), .options = furrr_options(seed = TRUE)),
+  mutate(obs = future_map(obs, ~st_as_sf(.x) %>% as('Spatial'), .options = furrr_options(seed = TRUE)),
          site = future_map(geometry, ~as(.x, 'Spatial'), .options = furrr_options(seed = TRUE)),
          simulations = future_map(simulations, ~pull(.x, sim) %>% map(~st_as_sf(.x) %>% as('Spatial')),
                                   .options = furrr_options(seed = TRUE))) %>%
   select(-geometry)
 
+message('Finished sampling posterior for site PPP metrics: ', Sys.time())
 
 ppp_metrics <- site_point_processes %>%
   
   rowwise %>%
-  mutate(simulations = list(simulations[sample(nversions * nsim, nsim)])) %>%
-
   mutate(site = list(as(site, 'owin')),
          obs = list(ppp(x = coordinates(obs)[,1],
                         y = coordinates(obs)[,2],
@@ -361,12 +376,14 @@ ppp_metrics <- site_point_processes %>%
                         metric = diag_metrics),
             by = 'Site') %>%
   select(Site, metric, everything()) %>%
+  mutate(nsim = map_int(simulations, length)) %>%
   mutate(model = future_pmap(list(obs, simulations, nsim, metric),
                              ~envelope(..1, ..4, simulate = ..2, nsim = (..3 - 1)),
                              .progress = TRUE, .options = furrr_options(seed = TRUE))) %>%
   pivot_wider(names_from = 'metric',
               values_from = 'model') %>%
   select(-obs, -simulations, -site)
+
 message(str_c('Finished measuring site level posterior point processes: ', Sys.time()))
 
 
@@ -393,8 +410,7 @@ ppp_results <- ppp_metrics %>%
   group_by(metric) %>%
   summarise(metric_plots = list(wrap_plots(ind_plot) + plot_annotation(title = metric)), .groups = 'drop') %>%
   
-  mutate(out_name = str_c(OUT_DIR, '/', metric, '_test.png',
-                        sep = '')) %>%
+  mutate(out_name = str_c(OUT_DIR, '/', metric, '.png',sep = '')) %>%
   mutate(write = future_map2(metric_plots, out_name, ~ggsave(.y, plot = .x, height = 15, width = 15),
                              .options = furrr_options(seed = TRUE))) %>%
   select(-write)

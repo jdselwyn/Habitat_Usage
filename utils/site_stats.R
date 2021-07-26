@@ -239,3 +239,57 @@ site_level_data %>%
   select(-starts_with('classified')) %>%
   arrange(Site) %>%
   write_csv('tmp_table.csv')
+
+#### Sand Area Bins ####
+
+make_st_areas <- function(r){
+  r2 <- as.polygons(r)
+  tmpf2 <- tempfile()
+  writeVector(r2, tmpf2, overwrite=TRUE)
+  
+  boundary <- st_read(tmpf2, crs = crs(r), quiet = TRUE) %>%
+    rename(habitat = 1) %>%
+    mutate(habitat = if_else(habitat == 1, 'Sand', 'Reef')) %>%
+    st_cast('POLYGON') %>%
+    mutate(area = map(geometry, st_area),
+           area = as.numeric(area)) %>% 
+    filter(habitat == 'Sand')
+  
+  file.remove(tmpf2)
+  
+  boundary
+}
+
+folder_choice <- 'C:/Users/jdsel/Documents/Coryphopterus/Habitat Association (Paper Y - PhD Ch. Y)/Results/Habitat_Classification'
+
+folder_choice <- '/work/hobi/jselwyn/Habitat/Intermediate_Files/Habitat_Classification'
+
+tmp <- list.files(folder_choice, pattern = 'tif$', full.names = TRUE) %>%
+  tibble(file = .) %>%
+  filter(str_detect(file, 'c5')) %>%
+  filter(str_detect(file, 'smoothed', negate = TRUE)) %>%
+  mutate(site = str_extract(file, 'BZ17-[0-9ABKNS]+')) %>%
+  group_by(site) %>%
+  summarise(habitat = list(rast(file)), .groups = 'drop') %>%
+  rowwise %>%
+  summarise(site = site, make_st_areas(habitat), .groups = 'drop')
+
+min_area <- 0.25
+tmp %>%
+  mutate(is_less_than_min = area < min_area) %>%
+  group_by(is_less_than_min) %>%
+  summarise(number = n(),
+            total_area = sum(area),
+            .groups = 'drop') %>%
+  mutate(across(c(number, total_area), ~./sum(.)))
+
+
+
+
+
+min_area <- if_else(min_area >= max(boundary$area, na.rm = TRUE), max(boundary$area, na.rm = TRUE), min_area)
+
+boundary2 <- boundary %>%
+  filter(area >= min_area) %>% 
+  fill_holes(threshold = min_area) %>%
+  select(-habitat) 

@@ -10,8 +10,14 @@
 
 cd /work/hobi/jselwyn/Habitat/Results/INLA_models
 
-modelPrefix=models_17.5.21
+#sbatch clean.slurm models_13.3.21
+#sbatch clean.slurm models_7.7.21
+#sbatch clean.slurm models_14.3.21
+#sbatch clean.slurm models_16.3.21
+
+#modelPrefix=models_8.7.21
+modelPrefix=$1
 
 dirList=$(ls -d ${modelPrefix}*)
 tar -cjvf ${modelPrefix}.tar.bz ${dirList}
-rm -r ${dirList}
+rm -rf ${dirList}
