@@ -1,13 +1,11 @@
 library(tidyverse)
 library(units)
-
-#### Fish diagnostic ####
-read_csv()
-
+library(brms)
 
 #### Parameters ####
-## Distribution Model 
-posterior_hpd_distribution <- read_rds('../../overall_parameters.rds') %>%
+## Distribution Model
+
+posterior_hpd_distribution <- read_rds('../../Results/INLA_models/model_Overall.9.7.21/overall_parameters.rds') %>%
   select(-sd:-quant0.975, -distributions) %>%
   rowwise %>%
   mutate(hpd = list(pivot_wider(hpd, 
@@ -20,6 +18,12 @@ posterior_hpd_distribution <- read_rds('../../overall_parameters.rds') %>%
          significant,
          everything())
 
+
+posterior_hpd_distribution %>%
+  select(parameter, mean, ends_with('95')) %>%
+  filter(str_detect(parameter, 'spatialsmooth')) 
+
+
 posterior_hpd_distribution %>%
   select(parameter, mean, ends_with('95')) %>%
   filter(parameter == 'Intercept') %>%
@@ -31,7 +35,7 @@ posterior_hpd_distribution %>%
 posterior_hpd_distribution %>%
   filter(parameter != 'Intercept', parameter != 'Site', type != 'hyper_par') %>%
   mutate(across(c(mean, ends_with('95')), ~exp(.) * 100 - 100)) %>%
-  left_join(read_csv('../Results/Topography/overall_metrics_c5.csv') %>%
+  left_join(read_csv('../../Results/Topography/overall_metrics_c5.csv') %>%
               select(metric, sd) %>%
               mutate(metric = case_when(metric == 'moran' ~ 'Coarse Complexity',
                                         metric == 'complexity' ~ 'Fine Complexity',
@@ -42,6 +46,7 @@ posterior_hpd_distribution %>%
   mutate(across(c(mean, ends_with('95')), ~if_else(is.na(sd), ., .*sd))) %>%
   select(parameter, mean, ends_with('95'), starts_with('prob'), starts_with('evidence'))
 
+
 posterior_hpd_distribution %>%
   filter(parameter == 'Site')
 
@@ -51,7 +56,7 @@ posterior_hpd_distribution %>%
   select(parameter, mean, ends_with('95'))
 
 ## Composition Model
-composition_model <- read_rds('../Intermediate_Files/BRMS_models/shoal_composition_model.rds')
+composition_model <- read_rds('../../Intermediate_Files/BRMS_models/shoal_composition_model.rds')
 
 
 posterior_hpd_compostion <- posterior_interval(composition_model, pars = '^b_') %>%
@@ -113,7 +118,9 @@ bind_rows(Distribution = posterior_hpd_distribution,
 bind_rows(Distribution = posterior_hpd_distribution,
           Composition = posterior_hpd_compostion,
           .id = 'model') %>%
-  filter(parameter != 'Intercept', parameter != 'Site') %>%
+  filter(parameter != 'Intercept', parameter != 'Site',
+         str_detect(parameter, 'spatial', negate = TRUE),
+         str_detect(parameter, 'Stdev', negate = TRUE)) %>%
   mutate(model = factor(model, levels = c('Distribution', 'Composition')),
          parameter = fct_reorder(parameter, mean)) %>%
   ggplot(aes(y = parameter, x = mean, xmin = low_0.95, xmax = high_0.95)) +
@@ -128,5 +135,5 @@ bind_rows(Distribution = posterior_hpd_distribution,
         axis.title = element_text(size = 16),
         legend.text = element_text(size = 14),
         legend.title = element_text(size = 16))
-ggsave('../Manuscript/Figures/parameter_estimates.png')
+ggsave('../../Manuscript/Figures/parameter_estimates.png')
 
