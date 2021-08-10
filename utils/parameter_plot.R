@@ -121,19 +121,23 @@ bind_rows(Distribution = posterior_hpd_distribution,
   filter(parameter != 'Intercept', parameter != 'Site',
          str_detect(parameter, 'spatial', negate = TRUE),
          str_detect(parameter, 'Stdev', negate = TRUE)) %>%
-  mutate(model = factor(model, levels = c('Distribution', 'Composition')),
+  mutate(model = if_else(model == 'Distribution', 'A', 'B'),
+         # model = factor(model, levels = c('Distribution', 'Composition')),
          parameter = fct_reorder(parameter, mean)) %>%
   ggplot(aes(y = parameter, x = mean, xmin = low_0.95, xmax = high_0.95)) +
   geom_vline(xintercept = 0, linetype = 'dashed') +
-  geom_pointrange(linetype = 'dashed') +
+  geom_pointrange(linetype = 'solid') +
   geom_linerange(aes(xmin = low_0.5, xmax = high_0.5)) +
   facet_wrap(~model) +
   labs(y = NULL,
-       x = 'Standardized Linear Effect on Density') +
+       x = 'Standardized Linear Effect') +
   theme_classic() +
   theme(axis.text = element_text(size = 14, colour = 'black'),
         axis.title = element_text(size = 16),
         legend.text = element_text(size = 14),
-        legend.title = element_text(size = 16))
-ggsave('../../Manuscript/Figures/parameter_estimates.png')
+        legend.title = element_text(size = 16),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 20, hjust = 0),
+        panel.border = element_rect(colour = 'black', size = 1, fill = NA))
+ggsave('../../Manuscript/Figures/Figure 2.png')
 
