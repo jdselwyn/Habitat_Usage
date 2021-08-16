@@ -49,11 +49,11 @@ veganCovEllipse<-function (x, se = TRUE, conf = 0.95, npoints = 100)
 metrics_to_keep <- c('accuracy', 'roc_auc', 'j_index', 'sens', 'spec', 'mcnemar')
 models_to_remove <- c('rbf_svm', 'cart')
 
-overall_stats <- read_rds('../Results/Habitat_Classification/All_topParam_model_assessment_small.rds') %>%
+overall_stats <- read_rds('../../Results/Habitat_Classification/All_topParam_model_assessment_small.rds') %>%
   filter(!model_name %in% models_to_remove) %>%
   select(model_name, best_params, confusion, contains(metrics_to_keep), -bal_accuracy)
 
-site_stats <- read_rds('../Results/Habitat_Classification/All_topParam_model_bySite.rds') %>%
+site_stats <- read_rds('../../Results/Habitat_Classification/All_topParam_model_bySite.rds') %>%
   filter(!model_name %in% models_to_remove) %>%
   select(model_name, Site, confusion, contains(metrics_to_keep), -bal_accuracy)
 
@@ -173,7 +173,7 @@ the_pca %>%
 overall_stats %>%
   arrange(MDS1) %>%
   select(-best_params, -confusion, -starts_with('MDS')) %>%
-  mutate(mcnemar_p.value = p.adjust(mcnemar_p.value, 'bonferroni')) %>%
+  mutate(mcnemar_p.value = p.adjust(mcnemar_p.value, 'holm')) %>% 
   select(model_name, j_index, everything()) %>%
   mutate(across(where(is.numeric), ~round(., 3))) %>%
   write_csv('tmp_table.csv')
@@ -348,7 +348,7 @@ site_mat %>%
 site_stats %>%
   filter(model_name == 'c5') %>%
   select(-model_name, -confusion) %>%
-  mutate(mcnemar_p.value = p.adjust(mcnemar_p.value, 'bonferroni')) %>%
+  mutate(mcnemar_p.value = p.adjust(mcnemar_p.value, 'holm')) %>%
   select(Site, j_index, everything()) %>%
   mutate(Site = factor(Site, levels = str_c('BZ17', c('10KN', '5KN', '1KN', '500N', '100N', 
                                                       '0A', '0B', '60S', '100S', '500S', '1KS', '5KS'),
