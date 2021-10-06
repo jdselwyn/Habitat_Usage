@@ -6,6 +6,9 @@ library(broom)
 library(patchwork)
 library(brms)
 library(metR)
+library(lme4)
+library(lmerTest)
+library(RColorBrewer)
 
 
 #### Read in data ####
@@ -113,11 +116,6 @@ zone_stats %>%
   geom_smooth(method = 'lm', formula = y ~ 0 + x) +
   geom_point(aes(colour = site))
 
-library(lme4)
-library(lmerTest)
-library(emmeans)
-library(broom)
-library(RColorBrewer)
 
 anova(lmer(mean ~ fish + (0 + fish | site), data = zone_stats),
       lm(mean ~ fish, data = zone_stats))
@@ -151,8 +149,14 @@ lmer(mean ~ fish + (0 + fish | site), data = zone_stats) %>%
        x = "Observed # Fish",
        fill = 'Site') +
   theme_classic() +
-  theme(axis.text = element_text(colour = 'black'),
-        legend.position = c(0.1, 0.7))
+  theme(axis.text = element_text(size = 14, colour = 'black'),
+        axis.title = element_text(size = 16),
+        legend.position = c(0.1, 0.68),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 16),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 20, hjust = 0),
+        panel.border = element_rect(colour = 'black', size = 1, fill = NA))
 ggsave('../../Manuscript/Figures/Figure 4.svg', height = 6, width = 6)
 
 chisq.test(zone_stats$fish, 
@@ -222,7 +226,13 @@ mean_plot <- emmeans(quality_glm, ~quality_overall_mean | quality_overall_sd, ty
   labs(x = 'Mean Reef Quality',
        y = expression(paste("# Fish (", m^-2, ')'))) +
   theme_classic() +
-  theme(axis.text = element_text(colour = 'black'))
+  theme(axis.text = element_text(size = 14, colour = 'black'),
+        axis.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 16),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 20, hjust = 0),
+        panel.border = element_rect(colour = 'black', size = 1, fill = NA))
 
 
 sd_plot <- emmeans(quality_glm, ~quality_overall_sd | quality_overall_mean, type = 'response', offset = log(1),
@@ -233,10 +243,16 @@ sd_plot <- emmeans(quality_glm, ~quality_overall_sd | quality_overall_mean, type
   geom_ribbon(aes(ymin = lower.HPD, ymax = upper.HPD), alpha = 0.2) +
   geom_line() +
   geom_point(data = site_data, aes(y = fish / site_area), colour = 'black', fill = 'black') +
-  labs(x = 'Standard Deviation Reef Quality',
+  labs(x = 'Standard Deviation Reef\nQuality',
        y = expression(paste("# Fish (", m^-2, ')'))) +
   theme_classic() +
-  theme(axis.text = element_text(colour = 'black'))
+  theme(axis.text = element_text(size = 14, colour = 'black'),
+        axis.title = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 16),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 20, hjust = 0),
+        panel.border = element_rect(colour = 'black', size = 1, fill = NA))
 
 
 contour_plot <- emmeans(quality_glm, ~quality_overall_sd | quality_overall_mean, type = 'response', offset = log(1),
@@ -257,11 +273,18 @@ contour_plot <- emmeans(quality_glm, ~quality_overall_sd | quality_overall_mean,
   scale_y_continuous(expand = c(0, 0)) +
   guides(fill = guide_colourbar(override.aes = list(alpha = 1, shape = NA))) +
   labs(x = 'Mean Reef Quality',
-       y = 'Standard Deviation Reef Quality',
+       y = 'Standard Deviation\nReef Quality',
        fill = expression(paste("# Fish (", m^-2, ')'))) +
   theme_classic() +
-  theme(axis.text = element_text(colour = 'black'),
-        legend.position = 'bottom')
+  theme(axis.text = element_text(size = 14, colour = 'black'),
+        axis.title = element_text(size = 16),
+        legend.position = 'bottom',
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 16),
+        strip.background = element_blank(),
+        strip.text = element_text(size = 20, hjust = 0),
+        panel.border = element_rect(colour = 'black', size = 1, fill = NA))
 
-(mean_plot + sd_plot) / contour_plot + plot_annotation(tag_levels = 'A')
+(mean_plot + sd_plot) / contour_plot + plot_annotation(tag_levels = 'A') & 
+  theme(plot.tag = element_text(size = 20))
 ggsave('../../Manuscript/Figures/Figure 6.svg', height = 6, width = 7)
