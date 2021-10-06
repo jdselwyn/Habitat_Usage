@@ -29,7 +29,6 @@ shoal_data %>%
   group_by(Site) %>%
   summarise(n = n())
 
-
 individual_data <- unlist(str_split('cdcccccccnnnciiiccclcccccicccc','')) %>%
   tibble(col_type = .) %>%
   mutate(col_type = case_when(col_type == 'c' ~ 'text',
@@ -42,9 +41,13 @@ individual_data <- unlist(str_split('cdcccccccnnnciiiccclcccccicccc','')) %>%
   clean_names %>%
   dplyr::select(tube_label, year, site, cloud, sl_mm, tl_mm) %>%
   dplyr::rename(ID = tube_label) %>%
-  left_join(read_csv("~/Coryphopterus/Bioinformatics/Mitochondrial Mapping/mitochondrial_blast_results.csv"), by = 'ID') %>%
-  left_join(read_csv('~/Coryphopterus/Bioinformatics/Species_Split/Results/DAPC_assignments.csv'), by = 'ID') %>%
-  left_join(read_csv("~/Coryphopterus/Bioinformatics/Species_Split/Results/Structure_assignments.csv"), by = 'ID') %>%
+
+  left_join(read_csv('~/Coryphopterus/Bioinformatics/Coryphopterus_RAD/splitSpecies/MiSeq_lightSpecies_mini_dapc_all_cluster_pca.csv') %>%
+              dplyr::select(ID, dapc_species) %>%
+              mutate(ID = str_replace(ID, '_', '-'),
+                     ID = str_remove(ID, '.fp2.repr')) %>%
+              dplyr::rename(dapc_assignment = dapc_species), 
+            by = 'ID') %>%
   mutate(cloud = map_chr(cloud, ~str_split(.x, '-', simplify = TRUE) %>% sort %>% str_to_lower %>% str_c(collapse = '-')),
          cloud = str_remove(cloud, '^[ab]-'))
 
@@ -53,15 +56,6 @@ pca_model_loadings <- read_csv('../Results/Topography/complexity_pca_loadings.cs
 topography <- list.files('../Intermediate_Files/Topography', pattern = 'tif$', full.names = TRUE) %>%
   tibble(habitat = .) %>%
   mutate(Site = str_extract(habitat, 'BZ17-[0-9ABKNS]+'))
-
-#### Which cluster goes to which species ####
-individual_data %>%
-  filter(!is.na(blast_species_hit), !is.na(dapc_assignment)) %>%
-  count(blast_species_hit, dapc_assignment)
-
-individual_data <- individual_data %>%
-  mutate(dapc_assignment = if_else(dapc_assignment == 'Cluster 1', 'Coryphopterus hyalinus', 'Coryphopterus personatus')) 
-
 
 #### Get habitat data for shoal centroids ####
 shoal_composition <- inner_join(shoal_data, individual_data, by = c('Site' = 'site', 'Nut' = 'cloud')) %>%
@@ -116,7 +110,8 @@ lines(dgamma(x, shape = 2, rate = 1) ~ x, type = 'b', col = 'blue')
 lines(dgamma(x, shape = 2, rate = 2) ~ x, type = 'b', col = 'red')
 lines(dt(x, df = 3) ~ x, type = 'b', col = 'purple')
 
-composition_model <- brm(cpers | trials(total) ~ habitat + Shoal.Size + depth + boundaryDistance + viewshed + coarse_complexity + fine_complexity + 
+composition_model <- brm(cpers | trials(total) ~ habitat + Shoal.Size + depth + boundaryDistance + viewshed + 
+                           coarse_complexity + fine_complexity + 
                            (1 | Site) + (1 | shoal),
                          family = 'binomial',
                          data = shoal_composition,
@@ -133,7 +128,9 @@ composition_model <- brm(cpers | trials(total) ~ habitat + Shoal.Size + depth + 
                          sample_prior = 'yes',
                          algorithm = 'sampling',
                          file = '../Intermediate_Files/BRMS_models/shoal_composition_model',
-                         file_refit = 'on_change')
+                         file_refit = 'on_change',
+                         
+                         control = list(adapt_delta = 0.85))
 
 #### Model Diagnostics ####
 plot(composition_model) #Trace plots for MCMC
