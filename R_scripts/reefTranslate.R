@@ -1,19 +1,23 @@
 ## Code to take all site raster stacks and translate them into a single grid of raster stacks
 
 
-args <- commandArgs(trailingOnly=TRUE)
-model_choice <- args[1]
-# model_choice <- 'c5'
+if(!interactive()){
+  args <- commandArgs(trailingOnly=TRUE)
+  model_choice <- args[1]
+} else {
+  model_choice <- 'c5'
+}
+
 
 #### Libraries ####
-library(raster)
-library(tidyverse)
-library(sf)
-library(terra)
+suppressWarnings(suppressMessages(library(raster)))
+suppressWarnings(suppressMessages(library(tidyverse)))
+suppressWarnings(suppressMessages(library(sf)))
+suppressWarnings(suppressMessages(library(terra)))
 
 
 #### Set up Computer ####
-spacer <- if_else(Sys.info()['nodename'] == 'JASONDELL', 0, 1000)
+spacer <- if_else(Sys.info()['nodename'] == 'JASONDELL', 0, 1000/4) #divide by 4 is because you add in cells not cm's
 save_suffix <- 'All'
 COMPUTER <- if_else(Sys.info()['nodename'] == 'JASONDELL', 'laptop', 'HPC')
 PROG <- if_else(COMPUTER == 'HPC', FALSE, TRUE)
@@ -24,18 +28,14 @@ if(COMPUTER == 'Gawain'){
   SAVE_LOCATION<-'~/Documents/Coryphopterus/Habitat Association (Paper Y - PhD Ch. Y)/Results'
   
 } else if(COMPUTER == 'laptop'){
-  
   DATA_folder<-'~/Coryphopterus/Maps' #Gawain
   INTERMEDIATE_FILES<-'~/Coryphopterus/Habitat Association (Paper Y - PhD Ch. Y)/Intermediate_Files'
   SAVE_LOCATION<-'~/Coryphopterus/Habitat Association (Paper Y - PhD Ch. Y)/Results'
   
 } else if (COMPUTER == 'HPC'){
-  
-  
   DATA_folder<-'/work/hobi/jselwyn/Habitat'
   INTERMEDIATE_FILES<-'/work/hobi/jselwyn/Habitat/Intermediate_Files'
   SAVE_LOCATION<-'/work/hobi/jselwyn/Habitat/Results'
-  
 }
 
 #### Read in Data ####

@@ -30,14 +30,14 @@ fish_count <- list.files('~/Coryphopterus/Maps/COPE_Sites/Shoals', pattern = 'sh
 
 site_quality <- full_join(quality, habitat_type, by = 'site') %>%
   rowwise %>%
-  mutate(site_area = area(habitat),
+  mutate(site_area = global(cellSize(habitat), "sum"),
          simple_mean = global(quality, 'mean', na.rm = TRUE)$mean,
          habitat = list(resample(habitat, quality) %>% round),
          reef = list(classify(habitat == 2, cbind(0, NA))),
          quality = list(mask(quality, reef)),
          upper_tier = list(classify(quality > 0.75, cbind(0, NA)))) %>%
   mutate(just_reef_mean = global(quality, 'mean', na.rm = TRUE)$mean, 
-            good_area = area(upper_tier)) %>%
+            good_area = global(cellSize(upper_tier), "sum")) %>%
   mutate(percent_good = good_area / site_area * 100) %>%
   ungroup %>%
   arrange(-percent_good)

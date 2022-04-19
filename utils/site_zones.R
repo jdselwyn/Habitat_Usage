@@ -33,6 +33,16 @@ habitat_type <- list.files('~/Coryphopterus/Habitat Association (Paper Y - PhD C
   group_by(site) %>%
   summarise(habitat = list(rast(habitat)$classified_habitat_unsmoothed))
 
+topography <- list.files('~/Coryphopterus/Habitat Association (Paper Y - PhD Ch. Y)/Intermediate_Files/Topography/',
+                         pattern = 'tif', full.names = TRUE) %>%
+  tibble(topography = .) %>%
+  mutate(site = str_extract(topography, 'BZ17-[0-9KNSAB]+')) %>%
+  group_by(site) %>%
+  summarise(topography = list(rast(topography) %>%
+                                subset(c('depth', 'moran', 'relief', 'viewshed', 
+                                         'boundaryDistance', 'rugosity', 'vectorDispersion'))),
+            .groups = 'rowwise')
+
 
 shoals <- list.files('~/Coryphopterus/Maps/COPE_Sites/Shoals', pattern = 'shp$', recursive = TRUE, full.names = TRUE) %>%
   tibble(shoals = .) %>%
@@ -50,6 +60,7 @@ shoals <- list.files('~/Coryphopterus/Maps/COPE_Sites/Shoals', pattern = 'shp$',
 full_data <- full_join(quality, prediction, by = 'site') %>%
   full_join(habitat_type, by = 'site') %>%
   full_join(shoals, by = 'site') %>%
+  full_join(topography, by = 'site') %>%
   mutate(site = factor(site, levels = str_c('BZ17', c('10KN', '5KN', '1KN',
                                                       '500N', '100N','0A',
                                                       '0B', '60S', '100S',
@@ -101,16 +112,17 @@ zones <- full_data %>%
 zone_stats <- zones %>%
   rowwise(site) %>%
   summarise(zonal(areas, zones, sum), # %>% rename(area = median)
+            project(zones, topography, method = 'near') %>% zonal(topography, z = ., 'mean', na.rm = TRUE),
             zonal(quality, zones, 'mean', na.rm = TRUE) %>%
-              rename(quality = median),
-            zonal(predictions, zones, 'sum', na.rm = TRUE),
+              rename(quality = mean),
+            zonal(predictions, zones, 'sum', na.rm = TRUE), #previously used sum to combine prediction across zones - think i may need to multiply by area
             zonal(shoals, zones, 'sum', na.rm = TRUE) %>% 
-              rename(fish = median),
+              rename(fish = mean),
             .groups = 'drop') 
 
 zone_stats %>%
   # mutate(across(c(median, fish, starts_with('q')), ~./area)) %>%
-  ggplot(aes(x = median, y = fish)) +
+  ggplot(aes(x = mean, y = fish)) +
   geom_abline(intercept = 0, slope = 1, 
               colour = 'black', linetype = 'dashed') +
   geom_smooth(method = 'lm', formula = y ~ 0 + x) +

@@ -4,8 +4,14 @@
 ##TODO make it so if there's already a param file it takes that one (right now can just specify the one that's already there)
 
 if(interactive()){
-  param_file <- '/home/jselwyn/Habitat/params/inlabru_params.R'
-  run_name <- '7.7.21_test.8'
+  if(Sys.info()['sysname'] == 'Windows'){
+    param_file <- '~/Coryphopterus/Habitat Association/Habitat_Usage/params/inlabru_params.R'
+  } else {
+    param_file <- '/home/jselwyn/Habitat/params/inlabru_params.R'
+  }
+  
+  run_name <- 'test_2022-14-04.0'
+  
 } else {
   args <- commandArgs(trailingOnly=TRUE)
   param_file <- args[1]
@@ -19,18 +25,18 @@ newproj<-"+proj=utm +zone=16Q +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
 
 
 #### Set up Computer ####
-COMPUTER <- ifelse(Sys.info()['nodename'] == 'JASONDELL', 'laptop', 
+COMPUTER <- ifelse(Sys.info()['sysname'] == 'Windows', 'laptop', 
                     ifelse(Sys.info()['nodename'] == 'jdselwyn', 'Gawain', 'HPC'))
 
 if(COMPUTER == 'Gawain'){
   DATA_folder<-'~/Documents/Coryphopterus/Maps' #Gawain
-  INTERMEDIATE_FILES<-'~/Documents/Coryphopterus/Habitat Association (Paper Y - PhD Ch. Y)/Intermediate_Files'
-  SAVE_LOCATION<-'~/Documents/Coryphopterus/Habitat Association (Paper Y - PhD Ch. Y)/Results'
+  INTERMEDIATE_FILES<-'~/Documents/Coryphopterus/Habitat Association/Intermediate_Files'
+  SAVE_LOCATION<-'~/Documents/Coryphopterus/Habitat Association/Results'
   
 } else if(COMPUTER == 'laptop'){
   DATA_folder<-'~/Coryphopterus/Maps' #Gawain
-  INTERMEDIATE_FILES<-'~/Coryphopterus/Habitat Association (Paper Y - PhD Ch. Y)/Intermediate_Files'
-  SAVE_LOCATION<-'~/Coryphopterus/Habitat Association (Paper Y - PhD Ch. Y)/Results'
+  INTERMEDIATE_FILES<-'~/Coryphopterus/Habitat Association/Intermediate_Files'
+  SAVE_LOCATION<-'~/Coryphopterus/Habitat Association/Results'
   
 } else if (COMPUTER == 'HPC'){
   DATA_folder<-'/work/hobi/jselwyn/Habitat'
@@ -161,7 +167,8 @@ fish_raw <- shoals %>%
   dplyr::select(-geometry) %>%
   unnest(points) %>%
   st_as_sf(coords = c('x', 'y'),
-           crs = NA)
+           crs = NA) %>%
+  filter(!is.na(site))
 
 fish_sf <- fish_raw %>%
   left_join(translation_instructions, by = c('site' = 'Site')) %>%
@@ -204,6 +211,14 @@ boundary.loc <- rbind(SpatialPoints(INLA::inla.sp2segment(site_poly)$loc,
 #                               prior.range = c(5, 0.5),
 #                               prior.sigma = c(2, 0.01))
 
+if(Sys.info()['sysname'] == 'Windows'){
+  mesh_setting$max.edge <- c(5,10)
+  mesh_setting$cutoff <- c(2.5)
+  
+  mesh_setting$offset <- c(5.5, 10)
+}
+
+
 boundary <- list(inla.nonconvex.hull(coordinates(boundary.loc), mesh_setting$offset[1]),
                  inla.nonconvex.hull(coordinates(boundary.loc), mesh_setting$offset[2]))
 
@@ -242,7 +257,7 @@ for(i in 1:nrow(site_poly)){
                run_name, '/mesh_', site_poly$names[i], '_', 
                run_name, '.png',
                sep = ''), 
-         plot = mesh_plot, height = 30, width = 30)
+         plot = mesh_plot_site, height = 30, width = 30)
 }
 
 message(str_c('Finished Building Mesh: ', Sys.time()))

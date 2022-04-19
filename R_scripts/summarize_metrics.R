@@ -6,11 +6,11 @@ model_choice <- args[1]
 ##TODO why aren't there any negative z-scores for viewshed - check the rest?
 
 #### Libraries ####
-library(raster)
-library(terra)
-library(tidyverse)
-library(magrittr)
-library(furrr)
+suppressWarnings(suppressMessages(library(raster)))
+suppressWarnings(suppressMessages(library(terra)))
+suppressWarnings(suppressMessages(library(tidyverse)))
+suppressWarnings(suppressMessages(library(magrittr)))
+suppressWarnings(suppressMessages(library(furrr)))
 
 #### Set up Computer ####
 save_suffix <- 'All'

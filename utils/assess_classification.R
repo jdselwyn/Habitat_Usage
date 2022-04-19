@@ -10,6 +10,7 @@ library(patchwork)
 library(gt)
 library(vegan)
 library(vip)
+library(workflows)
 
 plot_confMat <- function(x, font_size = 8){
   x %>%
@@ -159,13 +160,15 @@ the_segments <- the_pca$steps[[3]]$res %>%
   tidy(matrix = 'rotation') %>%
   pivot_wider(names_from = "PC", 
               names_prefix = "PC",
-              values_from = "value") 
+              values_from = "value") %>%
+  mutate(across(c('PC1', 'PC2'), ~.*3))
 
+library(ggrepel)
 the_pca %>%
   juice %>%
   ggplot(aes(x = PC1, y = PC2)) +
-  geom_segment(data = the_segments, xend = 0, yend = 0) +
-  geom_text(data = the_segments, aes(label = column)) +
+  geom_segment(data = the_segments, xend = 0, yend = 0, arrow = arrow(ends = 'first')) +
+  geom_text_repel(data = the_segments, aes(label = column)) +
   geom_text(aes(label = model_name))
 
 
@@ -274,7 +277,7 @@ site_stats %>%
   #                               ))
   
   
-  ggplot(aes(x = model_name, y = mean, ymin = lwr, ymax = upr)) +
+  ggplot(aes(x = model_name, y = mean, ymin = lwr, ymax = upr, colour = model_name == 'c5')) +
   geom_linerange(show.legend = FALSE) +
   geom_point() +
   geom_hline(data = tibble(name2 = 'log10(McNemar X2)', mean = log(qchisq(0.05, 1, lower.tail = FALSE), base = 10)),
@@ -321,13 +324,13 @@ nmds_results <- site_mat %>%
 
 
 nmds_results %>%
-  nest(data = c(-model_name)) %>%
+  nest(data = c(-site)) %>%
   mutate(ellipse = map(data, function(x) x %>%
                        dplyr::select(contains('MDS')) %>%
                        dplyr::select(1:2) %>%
                        veganCovEllipse())) %>%
   unnest(ellipse) %>%
-  ggplot(aes(x = MDS1, y = MDS2, colour = model_name)) +
+  ggplot(aes(x = MDS1, y = MDS2, colour = site)) +
   geom_path() +
   geom_point(data = nmds_results)
 
@@ -341,7 +344,7 @@ site_mat %>%
   as_tibble() %>%
   bind_cols(site_mat) %>%
   ggplot(aes(x = V1, y = V2)) +
-  geom_text(aes(label = model_name), show.legend = FALSE)
+  geom_text(aes(label = model_name, colour = Site), show.legend = FALSE)
 
 
 #### Site plots/tables for top model (c5) ####
@@ -385,19 +388,19 @@ overall_stats %>%
   write_csv('tmp_table.csv')
 
 #### Classifier interpretation ####
-c5_model <- read_rds('../Results/Habitat_Classification/All_c5_completeModel.rds')
+c5_model <- read_rds('../../Results/Habitat_Classification/All_c5_completeModel.rds')
 
 c5_model %>%
-  pull_workflow_preprocessor()
+  extract_preprocessor()
 
-tmp <- pull_workflow_prepped_recipe(c5_model)
+tmp <- extract_recipe(c5_model)
 tmp$steps[[3]]$res$sdev / sum(tmp$steps[[3]]$res$sdev)
 tmp$steps[[3]]$res$rotation
 
 
 
 c5_model %>%
-  pull_workflow_fit() %$%
+  extract_fit_parsnip() %$%
   vi(fit, "model") %>%
   mutate(Variable = str_remove(Variable, 'Site_'),
          # Importance = Importance - 100,
@@ -407,8 +410,14 @@ c5_model %>%
   geom_col()
 
 library(C50)
+
+remove_dupe_rules <- function(x){
+  #Get rid of rules that become identical due to rounding changes
+  if(length(x) > 1){return(NA_character_)} else{return(x)}
+}
+
 rule_set <- c5_model %>%
-  pull_workflow_fit() %$%
+  extract_fit_parsnip() %$%
   summary(fit) %$%
   output %>%
   extract2(1) %>% 
@@ -436,10 +445,10 @@ rule_set <- c5_model %>%
          parameter = str_remove(parameter, 'Site_'),
          number = parse_number(value),
          sign = str_extract(value, '[=<>]+'),
-         value = str_remove(value, sign) %>% str_trim) %>%
+         value = str_remove(value, sign) %>% str_trim %>% as.numeric %>% round(3) %>% as.character()) %>% 
   
   group_by(Trial, Rule, Stat, Result, parameter) %>%
-  mutate(number = round(number, 4),
+  mutate(number = round(number, 3),
          min_val = min(number),
          max_val = max(number)) %>%
   mutate(out = case_when(min_val == max_val ~ str_c(sign, value, sep = ' '),
@@ -449,7 +458,8 @@ rule_set <- c5_model %>%
   
   pivot_wider(names_from = 'parameter',
               values_from = 'out', 
-              values_fill = NULL) %>%
+              values_fill = NULL,
+              values_fn = remove_dupe_rules) %>%
   mutate(across(Trial:Rule, as.integer)) %>%
   arrange(Trial, Rule) %>%
   select(Trial:Result, starts_with('PC'), everything()) %>%

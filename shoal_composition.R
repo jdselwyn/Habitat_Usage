@@ -42,11 +42,11 @@ individual_data <- unlist(str_split('cdcccccccnnnciiiccclcccccicccc','')) %>%
   dplyr::select(tube_label, year, site, cloud, sl_mm, tl_mm) %>%
   dplyr::rename(ID = tube_label) %>%
 
-  left_join(read_csv('~/Coryphopterus/Bioinformatics/Coryphopterus_RAD/splitSpecies/MiSeq_lightSpecies_mini_dapc_all_cluster_pca.csv') %>%
-              dplyr::select(ID, dapc_species) %>%
+  left_join(read_csv('~/Coryphopterus/Bioinformatics/Coryphopterus_RAD/splitSpecies/hybrid_types.csv') %>%
+              dplyr::select(ID, hybrid) %>%
               mutate(ID = str_replace(ID, '_', '-'),
                      ID = str_remove(ID, '.fp2.repr')) %>%
-              dplyr::rename(dapc_assignment = dapc_species), 
+              dplyr::rename(species_assignment = hybrid), 
             by = 'ID') %>%
   mutate(cloud = map_chr(cloud, ~str_split(.x, '-', simplify = TRUE) %>% sort %>% str_to_lower %>% str_c(collapse = '-')),
          cloud = str_remove(cloud, '^[ab]-'))
@@ -59,12 +59,13 @@ topography <- list.files('../Intermediate_Files/Topography', pattern = 'tif$', f
 
 #### Get habitat data for shoal centroids ####
 shoal_composition <- inner_join(shoal_data, individual_data, by = c('Site' = 'site', 'Nut' = 'cloud')) %>%
-  filter(!is.na(dapc_assignment)) %>%
-  # mutate(dapc_assignment = if_else(dapc_assignment == 'Cluster 1', 'chya', 'cpers')) %>%
-  mutate(dapc_assignment = str_c('c', str_extract(dapc_assignment, 'hya|pers'), sep = '')) %>%
-  group_by(Site, Nut, Shoal.Size, dapc_assignment) %>%
+  filter(!is.na(species_assignment)) %>%
+  filter(species_assignment %in% c('CHYA', 'CPER')) %>%
+  mutate(species_assignment = str_to_lower(species_assignment),
+         species_assignment = if_else(species_assignment == 'cper', 'cpers', species_assignment)) %>%
+  group_by(Site, Nut, Shoal.Size, species_assignment) %>%
   summarise(n = n(), .groups = 'drop') %>%
-  pivot_wider(names_from = 'dapc_assignment',
+  pivot_wider(names_from = 'species_assignment',
               values_from = 'n', 
               values_fill = 0L) %>%
   mutate(total = chya + cpers) %>%

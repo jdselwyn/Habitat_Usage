@@ -1,31 +1,32 @@
 ## Create SpatialPixelsDataFrames for each habitat metric of interest to be used in INLA model ####
 
 ##TODO Evaluate viewshed - is it representing what I want? ex 5kn isn't showing greater degree of visibility at the top or consistently on the edges. that may be fine. Also inconsistent visibility of sand flats which should at least be able to see the rest of the sandy area.
-##TODO Fix boundary distance to not count distance from the edge of raster!
-##TODO Output pdf with all habitat metric plots
 ##TODO Boundary distance still not completely removing site boundary
 
+if(!interactive()){
+  args <- commandArgs(trailingOnly=TRUE)
+  model_choice <- args[1]
+  site_choice <- args[2]
+} else {
+  model_choice <- 'c5'
+  site_choice <- 'BZ17-0B'
+}
 
-args <- commandArgs(trailingOnly=TRUE)
-model_choice <- args[1]
-site_choice <- args[2]
-# model_choice <- 'c5'
-# site_choice <- 'BZ17-10KN'
 print(paste('Start full topography', Sys.time(), sample(1000, 1), sep = ': '))
 
 #### Libraries ####
-library(sf)
-library(raster)
-library(terra)
+suppressWarnings(suppressMessages(library(sf)))
+suppressWarnings(suppressMessages(library(raster)))
+suppressWarnings(suppressMessages(library(terra)))
 # library(exactextractr)
-library(tidyverse)
-library(magrittr)
-library(furrr)
-library(rayshader)
+suppressWarnings(suppressMessages(library(tidyverse)))
+suppressWarnings(suppressMessages(library(magrittr)))
+suppressWarnings(suppressMessages(library(furrr)))
+suppressWarnings(suppressMessages(library(rayshader)))
 # library(fractaldim)
-library(whitebox)
-library(spatialEco)
-library(smoothr)
+suppressWarnings(suppressMessages(library(whitebox)))
+suppressWarnings(suppressMessages(library(spatialEco)))
+suppressWarnings(suppressMessages(library(smoothr)))
 
 #Variable summary
 
@@ -110,11 +111,12 @@ all_site_locations<-tibble(dem_file = list.files(path = str_c(DATA_folder,'COPE_
              by='Site')
 
 #### Functions ####
+cell_resolution <- 4 #error in cm of worst site based on stick measurement 
 Scale <- 1/100
 Sun_Angle <- c(5) #This need to change to not have 3 specifically coded in but rather change the number dynamically
 View_Height <- 1
 View_Resolution <- 1e0
-raster_window <- matrix(1, nrow = 11, ncol = 11) #queens case 3x3 matrix
+raster_window <- matrix(1, nrow = 3, ncol = 3) #queens case 3x3 matrix
 #gaussian.kernel(sigma = 5, n = 15)
 min_sand_area <- 0.25 #the minimum contiguous sand area for boundary distance calculations. If no sand area larger than this will default to max sand area size
 
@@ -141,7 +143,8 @@ fix_depth<-function(x, site, denoise = FALSE, ...){
         # trim %>% 
         raster %>%
         projectRaster(crs = newproj) %>%
-        rast %T>%
+        rast %>%
+        aggregate(cell_resolution) %T>%
         writeRaster(filename = the_file, overwrite=T)
     } else {
       #NOT FUNCTIONAL
@@ -476,7 +479,7 @@ calc_VectorDispersion <- function(x, y, z, site, resolution){
       map(~focal(.x, w = resolution, fun = 'sum')) %>%
       map(~.x^2)
     
-    counter <- focal((!is.na(rast(x))), w = raster_window, fun = sum)
+    counter <- focal((!is.na(rast(x))), w = resolution, fun = sum)
     
     vectDisp <- (counter - sqrt(focal_stack[[1]] + focal_stack[[2]] + focal_stack[[3]])) / (counter - 1)
     
@@ -521,6 +524,13 @@ habitat_metrics <- all_site_locations %>%
   mutate(depth = map2(dem_file, Site, fix_depth),
          across(starts_with('classified'), ~map(., ~rast(.x)))) %>%
   select(-dem_file) %>%
+  
+  #Fix resolution to match worst quality DEM
+  rowwise %>%
+  mutate(#depth = list(aggregate(depth, cell_resolution)), #This was moved into fix_depth since that outputs a file
+         across(c(contains('habitat')), ~list(aggregate(., cell_resolution, 'modal')))) %>%
+  ungroup %>%
+  
   mutate(aspect = map2_chr(depth, Site, get_basic_terrain, version='aspect', unit = 'degrees'),
          slope = map2_chr(depth, Site, get_basic_terrain, version='slope'),
          moran = map2_chr(depth, Site, get_basic_terrain, version='moran'),
@@ -541,7 +551,7 @@ habitat_metrics <- all_site_locations %>%
          vectorDispersion = pmap_chr(list(normVectX, normVectY, normVectZ, Site), 
                                      calc_VectorDispersion, resolution = raster_window)) %>%
   mutate(rayShade = pmap_chr(list(depth, Site, deepwater), build_ShadowRealm,
-                             sun_angle = Sun_Angle, scale = Scale, internal_parallel = TRUE)) %>%
+                             sun_angle = Sun_Angle, scale = Scale, internal_parallel = FALSE)) %>%
   mutate(planCurvature = map2_chr(depth, Site, calc_Curvature, 
                                   version = 'planform', resolution = raster_window),
          profCurvature = map2_chr(depth, Site, calc_Curvature, 

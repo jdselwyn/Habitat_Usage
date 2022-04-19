@@ -139,5 +139,5 @@ bind_rows(Distribution = posterior_hpd_distribution,
         strip.background = element_blank(),
         strip.text = element_text(size = 20, hjust = 0),
         panel.border = element_rect(colour = 'black', size = 1, fill = NA))
-ggsave('../../Manuscript/Figures/Figure 2.png', height = 7, width = 6.5)
-
+ggsave('../../Manuscript/Figures/Figure 5.png', height = 7, width = 6.5)
+ggsave('../../Manuscript/Figures/Figure 5.svg', height = 7, width = 6.5)
